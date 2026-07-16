@@ -64,7 +64,6 @@ if crowd_selection:
         st.warning("⚠️ Please snap a quick photo proof before updating status to ensure data accuracy!")
     else:
         try:
-            # Convert file data directly to Base64 text string for easy cloud routing
             bytes_data = uploaded_file.getvalue()
             base64_photo = base64.b64encode(bytes_data).decode('utf-8')
             
@@ -84,7 +83,7 @@ if crowd_selection:
             else:
                 st.error(f"Sync Issue. Server Code: {response.status_code}")
         except Exception as e:
-            st.error(f"Sync issue: {e}")
+            st.error(f"Sync error detail: {e}")
 
 # --- 6. RENDER VERIFIED TIMELINE DATA ---
 st.markdown("---")
@@ -97,9 +96,10 @@ try:
     if response.status_code == 200:
         station_logs = response.json()
         
-        if not station_logs:
+        if not station_logs or len(station_logs) == 0:
             st.info(f"No recent logs for {selected_station} station yet. Be the first to add verified data!")
         else:
+            # FIXED: Target the first list dictionary object index safely [0]
             latest_report = station_logs[0]
             latest_crowd = latest_report.get('crowd_level', 'Unknown')
             photo_data_string = latest_report.get('proof_photo', None)
@@ -108,7 +108,7 @@ try:
                 raw_time = datetime.fromisoformat(latest_report['reported_at'].replace('Z', '+00:00'))
                 ist_time = raw_time + timedelta(hours=5, minutes=30)
                 clean_time = ist_time.strftime("%I:%M %p")
-            except:
+            except Exception as parse_err:
                 clean_time = "Just now"
 
             st.markdown(f"""
@@ -118,14 +118,16 @@ try:
             </div>
             """, unsafe_allow_html=True)
             
-            # Re-convert Base64 text string cleanly into a viewable photo
             if photo_data_string:
-                image_bytes = base64.b64decode(photo_data_string)
-                st.image(image_bytes, caption=f"Live commuter proof image for {selected_station}", use_container_width=True)
+                try:
+                    image_bytes = base64.b64decode(photo_data_string)
+                    st.image(image_bytes, caption=f"Live commuter proof image for {selected_station}", use_container_width=True)
+                except:
+                    st.caption("Unable to load preview attachment.")
     else:
-        st.error("Failed to sync current station logs.")
+        st.error(f"Failed to fetch timeline status logs. Server response: {response.status_code}")
 except Exception as e:
-    st.error("Failed to parse timeframe values.")
+    st.error(f"System pathway processing issue: {e}")
 
 # --- 7. FOOTER AD & VIRAL SHARE ---
 st.markdown('<div class="ad-box">🏷️ <b>Sponsored Banner Space</b></div>', unsafe_allow_html=True)
