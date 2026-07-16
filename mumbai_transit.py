@@ -5,15 +5,14 @@ from datetime import datetime, timedelta
 import base64
 import time
 
-# --- 1. CONFIGURATION & REST ENDPOINT ROUTING ---
-URL = "https://supabase.co"
+# --- 1. CONFIGURATION & FUNCTION ROUTING ---
+BASE_URL = "https://supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvYmxrcXhzeGxjbW1hbXdqaWJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTE4NDQsImV4cCI6MjA5OTc4Nzg0NH0.Vi7nYkCBUCnZvpNviQ8Ps__RHp5_BlIMx6lCWVmx-QE"
 
 HEADERS = {
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
+    "Content-Type": "application/json"
 }
 
 # --- 2. STATION DIRECTORY ---
@@ -34,17 +33,12 @@ st.markdown("""
 st.title("🚇 Mumbai Crowd Tracker")
 st.caption("Verified real-time station density data logs.")
 
-# --- 4. TOP AD PLACEHOLDER ---
 st.markdown('<div class="ad-box">🏷️ <b>Sponsored Banner Space</b></div>', unsafe_allow_html=True)
 
 category = st.radio("Select Network", ["Mumbai Local", "Mumbai Metro"], horizontal=True)
+selected_station = st.selectbox("Select Station", sorted(MUMBAI_LOCALS) if category == "Mumbai Local" else sorted(MUMBAI_METRO))
 
-if category == "Mumbai Local":
-    selected_station = st.selectbox("Select Station", sorted(MUMBAI_LOCALS))
-else:
-    selected_station = st.selectbox("Select Station", sorted(MUMBAI_METRO))
-
-# --- 5. PROOF VERIFICATION INTERFACE ---
+# --- 4. PROOF VERIFICATION INTERFACE ---
 st.write("### 📢 Broadcast Status with Proof")
 uploaded_file = st.camera_input("Take a quick photo of the station platform/crowd:")
 
@@ -58,7 +52,7 @@ with col2:
 with col3:
     if st.button("🔴 Very Crowded", use_container_width=True): crowd_selection = "🔴 Very Crowded"
 
-# Push to Live Supabase Cloud Database on submission
+# Push using backend function endpoint to bypass 405 error
 if crowd_selection:
     if not uploaded_file:
         st.warning("⚠️ Please snap a quick photo proof before updating status to ensure data accuracy!")
@@ -68,15 +62,17 @@ if crowd_selection:
             base64_photo = base64.b64encode(bytes_data).decode('utf-8')
             
             payload = {
-                "transit_type": category,
-                "station_name": selected_station,
-                "crowd_level": crowd_selection,
-                "proof_photo": base64_photo
+                "p_transit_type": category,
+                "p_station_name": selected_station,
+                "p_crowd_level": crowd_selection,
+                "p_proof_photo": base64_photo
             }
             
-            response = requests.post(URL, headers=HEADERS, json=payload)
+            # Submitting directly to the custom created RPC gateway function
+            post_url = f"{BASE_URL}/accept_commuter_report"
+            response = requests.post(post_url, headers=HEADERS, json=payload)
             
-            if response.status_code == 201 or response.status_code == 200:
+            if response.status_code == 200 or response.status_code == 201:
                 st.success("✅ Proof verified! Status updated.")
                 time.sleep(0.5)
                 st.rerun()
@@ -85,13 +81,14 @@ if crowd_selection:
         except Exception as e:
             st.error(f"Sync error detail: {e}")
 
-# --- 6. RENDER VERIFIED TIMELINE DATA ---
+# --- 5. RENDER VERIFIED TIMELINE DATA ---
 st.markdown("---")
 st.write(f"### 📊 Real-Time Status: {selected_station}")
 
-get_url = f"{URL}?station_name=eq.{selected_station}&order=reported_at.desc&limit=1"
 try:
-    response = requests.get(get_url, headers=HEADERS)
+    fetch_payload = {"p_station_name": selected_station}
+    get_url = f"{BASE_URL}/fetch_latest_report"
+    response = requests.post(get_url, headers=HEADERS, json=fetch_payload)
     
     if response.status_code == 200:
         station_logs = response.json()
@@ -99,8 +96,7 @@ try:
         if not station_logs or len(station_logs) == 0:
             st.info(f"No recent logs for {selected_station} station yet. Be the first to add verified data!")
         else:
-            # FIXED: Target the first list dictionary object index safely [0]
-            latest_report = station_logs[0]
+            latest_report = station_logs[0]  # Safely extraction from JSON payload array
             latest_crowd = latest_report.get('crowd_level', 'Unknown')
             photo_data_string = latest_report.get('proof_photo', None)
             
@@ -108,7 +104,7 @@ try:
                 raw_time = datetime.fromisoformat(latest_report['reported_at'].replace('Z', '+00:00'))
                 ist_time = raw_time + timedelta(hours=5, minutes=30)
                 clean_time = ist_time.strftime("%I:%M %p")
-            except Exception as parse_err:
+            except:
                 clean_time = "Just now"
 
             st.markdown(f"""
@@ -129,7 +125,7 @@ try:
 except Exception as e:
     st.error(f"System pathway processing issue: {e}")
 
-# --- 7. FOOTER AD & VIRAL SHARE ---
+# --- 6. FOOTER AD & VIRAL SHARE ---
 st.markdown('<div class="ad-box">🏷️ <b>Sponsored Banner Space</b></div>', unsafe_allow_html=True)
 
 share_msg = f"Check if {selected_station} station is crowded right now before leaving home: "
