@@ -1,56 +1,51 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+import requests
 from datetime import datetime, timedelta
+import base64
 import time
 
-# --- 1. LOCAL DATA MATRIX ENGINE ---
-DB_FILE = "transit_data.db"
+# --- 1. CONFIGURATION & REST ENDPOINT ROUTING ---
+URL = "https://supabase.co"
+KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvYmxrcXhzeGxjbW1hbXdqaWJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTE4NDQsImV4cCI6MjA5OTc4Nzg0NH0.Vi7nYkCBUCnZvpNviQ8Ps__RHp5_BlIMx6lCWVmx-QE"
 
-def init_local_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    # Updated table structure to hold proof image binaries and location flags
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS transit_reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            transit_type TEXT,
-            station_name TEXT,
-            crowd_level TEXT,
-            proof_photo BLOB,
-            is_gps_verified INTEGER,
-            reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_local_db()
-
-# Coordinates mapping database for Mumbai networks to execute GPS fence checks
-STATION_COORDINATES = {
-    "Malad": {"lat": 19.1874, "lon": 72.8484},
-    "Andheri": {"lat": 19.1197, "lon": 72.8464},
-    "Bandra": {"lat": 19.0544, "lon": 72.8407},
-    "Versova": {"lat": 19.1314, "lon": 72.8162}
+HEADERS = {
+    "apikey": KEY,
+    "Authorization": f"Bearer {KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
 }
 
-MUMBAI_LOCALS = ["Malad", "Churchgate", "Dadar", "Bandra", "Andheri", "Borivali"]
-MUMBAI_METRO = ["Versova", "D.N. Nagar", "Azad Nagar", "Andheri (Metro)", "BKC"]
+# --- 2. STATION DIRECTORY ---
+MUMBAI_LOCALS = ["Malad", "Churchgate", "Dadar", "Bandra", "Andheri", "Borivali", "CSMT", "Byculla", "Kurla", "Ghatkopar", "Thane", "Kalyan", "Vashi", "Panvel"]
+MUMBAI_METRO = ["Versova", "D.N. Nagar", "Azad Nagar", "Andheri (Metro)", "WEH", "Chakala", "Marol Naka", "Saki Naka", "Asalpha", "Ghatkopar (Metro)", "Gundavali", "Dahisar East", "BKC"]
 
-# --- 2. LAYOUT SPECIFICATIONS ---
+# --- 3. PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Crowd Tracker", page_icon="🚇", layout="centered")
+
+st.markdown("""
+    <style>
+    .block-container { padding-top: 1.5rem !important; max-width: 480px !important; }
+    .status-card { padding: 20px; border-radius: 8px; margin-bottom: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; text-align: center;}
+    .ad-box { background-color: #fff9db; border: 1px dashed #f59f00; padding: 10px; text-align: center; margin: 15px 0; border-radius: 6px; font-size: 13px; color: #666; }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("🚇 Mumbai Crowd Tracker")
 st.caption("Verified real-time station density data logs.")
 
+# --- 4. TOP AD PLACEHOLDER ---
+st.markdown('<div class="ad-box">🏷️ <b>Sponsored Banner Space</b></div>', unsafe_allow_html=True)
+
 category = st.radio("Select Network", ["Mumbai Local", "Mumbai Metro"], horizontal=True)
-selected_station = st.selectbox("Select Station", sorted(MUMBAI_LOCALS) if category == "Mumbai Local" else sorted(MUMBAI_METRO))
 
-# --- 3. PROOF VERIFICATION INTERFACE ---
+if category == "Mumbai Local":
+    selected_station = st.selectbox("Select Station", sorted(MUMBAI_LOCALS))
+else:
+    selected_station = st.selectbox("Select Station", sorted(MUMBAI_METRO))
+
+# --- 5. PROOF VERIFICATION INTERFACE ---
 st.write("### 📢 Broadcast Status with Proof")
-
-# Simple image capture widget using the smartphone camera
 uploaded_file = st.camera_input("Take a quick photo of the station platform/crowd:")
 
 col1, col2, col3 = st.columns(3)
@@ -63,51 +58,78 @@ with col2:
 with col3:
     if st.button("🔴 Very Crowded", use_container_width=True): crowd_selection = "🔴 Very Crowded"
 
+# Push to Live Supabase Cloud Database on submission
 if crowd_selection:
     if not uploaded_file:
         st.warning("⚠️ Please snap a quick photo proof before updating status to ensure data accuracy!")
     else:
         try:
-            # Process image to binary storage format
+            # Convert file data directly to Base64 text string for easy cloud routing
             bytes_data = uploaded_file.getvalue()
+            base64_photo = base64.b64encode(bytes_data).decode('utf-8')
             
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO transit_reports (transit_type, station_name, crowd_level, proof_photo, is_gps_verified, reported_at)
-                VALUES (?, ?, ?, ?, 1, datetime('now'))
-            """, (category, selected_station, crowd_selection, sqlite3.Binary(bytes_data)))
-            conn.commit()
-            conn.close()
+            payload = {
+                "transit_type": category,
+                "station_name": selected_station,
+                "crowd_level": crowd_selection,
+                "proof_photo": base64_photo
+            }
             
-            st.success("✅ Proof verified! Status updated.")
-            time.sleep(0.5)
-            st.rerun()
+            response = requests.post(URL, headers=HEADERS, json=payload)
+            
+            if response.status_code == 201 or response.status_code == 200:
+                st.success("✅ Proof verified! Status updated.")
+                time.sleep(0.5)
+                st.rerun()
+            else:
+                st.error(f"Sync Issue. Server Code: {response.status_code}")
         except Exception as e:
             st.error(f"Sync issue: {e}")
 
-# --- 4. RENDER TIMELINE VERIFIED DATA ---
+# --- 6. RENDER VERIFIED TIMELINE DATA ---
 st.markdown("---")
 st.write(f"### 📊 Real-Time Status: {selected_station}")
 
-conn = sqlite3.connect(DB_FILE)
-query = "SELECT crowd_level, proof_photo, reported_at FROM transit_reports WHERE station_name = ? ORDER BY reported_at DESC LIMIT 1"
-df = pd.read_sql_query(query, conn, params=(selected_station,))
-conn.close()
+get_url = f"{URL}?station_name=eq.{selected_station}&order=reported_at.desc&limit=1"
+try:
+    response = requests.get(get_url, headers=HEADERS)
+    
+    if response.status_code == 200:
+        station_logs = response.json()
+        
+        if not station_logs:
+            st.info(f"No recent logs for {selected_station} station yet. Be the first to add verified data!")
+        else:
+            latest_report = station_logs[0]
+            latest_crowd = latest_report.get('crowd_level', 'Unknown')
+            photo_data_string = latest_report.get('proof_photo', None)
+            
+            try:
+                raw_time = datetime.fromisoformat(latest_report['reported_at'].replace('Z', '+00:00'))
+                ist_time = raw_time + timedelta(hours=5, minutes=30)
+                clean_time = ist_time.strftime("%I:%M %p")
+            except:
+                clean_time = "Just now"
 
-if df.empty:
-    st.info("No recent logs for this station. Be the first to add verified data!")
-else:
-    latest_crowd = df.iloc[0]['crowd_level']
-    photo_data = df.iloc[0]['proof_photo']
-    
-    st.markdown(f"""
-    <div style="padding: 15px; border-radius: 8px; background-color: #e9ecef; text-align: center; margin-bottom:10px;">
-        <span style="font-size: 22px; font-weight: bold;">{latest_crowd}</span><br>
-        <small style="color: green;">✔ 100% Commuter Verified Photo Attachment Live</small>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # If photo exists, render it cleanly underneath the card banner
-    if photo_data:
-        st.image(photo_data, caption=f"Live commuter proof image for {selected_station}", use_container_width=True)
+            st.markdown(f"""
+            <div class="status-card">
+                <span style="font-size: 24px; font-weight: bold;">{latest_crowd}</span><br>
+                <small style="color: #6c757d;">Last commuter report at {clean_time}</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Re-convert Base64 text string cleanly into a viewable photo
+            if photo_data_string:
+                image_bytes = base64.b64decode(photo_data_string)
+                st.image(image_bytes, caption=f"Live commuter proof image for {selected_station}", use_container_width=True)
+    else:
+        st.error("Failed to sync current station logs.")
+except Exception as e:
+    st.error("Failed to parse timeframe values.")
+
+# --- 7. FOOTER AD & VIRAL SHARE ---
+st.markdown('<div class="ad-box">🏷️ <b>Sponsored Banner Space</b></div>', unsafe_allow_html=True)
+
+share_msg = f"Check if {selected_station} station is crowded right now before leaving home: "
+whatsapp_link = f"https://whatsapp.com{share_msg}https://streamlit.app"
+st.markdown(f'<a href="{whatsapp_link}" target="_blank"><button style="width:100%; padding:10px; background-color:#25D366; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">🟢 Share {selected_station} Live Status via WhatsApp</button></a>', unsafe_allow_html=True)
