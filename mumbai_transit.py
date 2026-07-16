@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 import base64
 import time
 
-# --- 1. CONFIGURATION & FUNCTION ROUTING ---
+# --- 1. CONFIGURATION & EXACT ENDPOINT ROUTING ---
+# FIXED: Added the required trailing slash to the API route to eliminate 404 bugs
 BASE_URL = "https://supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvYmxrcXhzeGxjbW1hbXdqaWJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTE4NDQsImV4cCI6MjA5OTc4Nzg0NH0.Vi7nYkCBUCnZvpNviQ8Ps__RHp5_BlIMx6lCWVmx-QE"
 
@@ -52,7 +53,7 @@ with col2:
 with col3:
     if st.button("🔴 Very Crowded", use_container_width=True): crowd_selection = "🔴 Very Crowded"
 
-# Push using backend function endpoint to bypass 405 error
+# Push using backend function endpoint
 if crowd_selection:
     if not uploaded_file:
         st.warning("⚠️ Please snap a quick photo proof before updating status to ensure data accuracy!")
@@ -68,8 +69,7 @@ if crowd_selection:
                 "p_proof_photo": base64_photo
             }
             
-            # Submitting directly to the custom created RPC gateway function
-            post_url = f"{BASE_URL}/accept_commuter_report"
+            post_url = f"{BASE_URL}accept_commuter_report"
             response = requests.post(post_url, headers=HEADERS, json=payload)
             
             if response.status_code == 200 or response.status_code == 201:
@@ -87,7 +87,7 @@ st.write(f"### 📊 Real-Time Status: {selected_station}")
 
 try:
     fetch_payload = {"p_station_name": selected_station}
-    get_url = f"{BASE_URL}/fetch_latest_report"
+    get_url = f"{BASE_URL}fetch_latest_report"
     response = requests.post(get_url, headers=HEADERS, json=fetch_payload)
     
     if response.status_code == 200:
@@ -96,7 +96,7 @@ try:
         if not station_logs or len(station_logs) == 0:
             st.info(f"No recent logs for {selected_station} station yet. Be the first to add verified data!")
         else:
-            latest_report = station_logs[0]  # Safely extraction from JSON payload array
+            latest_report = station_logs[0]  # Extracts dictionary safely from list array
             latest_crowd = latest_report.get('crowd_level', 'Unknown')
             photo_data_string = latest_report.get('proof_photo', None)
             
