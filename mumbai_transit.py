@@ -5,15 +5,16 @@ from datetime import datetime, timedelta
 import base64
 import time
 
-# --- 1. CONFIGURATION & EXACT ENDPOINT ROUTING ---
-# FIXED: Separated endpoints clearly to prevent Python string squashing bugs
-BASE_URL = "https://supabase.co"
+# --- 1. CONFIGURATION & EXACT DIRECT TABLE ENDPOINTS ---
+# Using standard raw table pathways to avoid function router dependency completely
+URL = "https://supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvYmxrcXhzeGxjbW1hbXdqaWJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTE4NDQsImV4cCI6MjA5OTc4Nzg0NH0.Vi7nYkCBUCnZvpNviQ8Ps__RHp5_BlIMx6lCWVmx-QE"
 
 HEADERS = {
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
 }
 
 # --- 2. STATION DIRECTORY ---
@@ -53,7 +54,7 @@ with col2:
 with col3:
     if st.button("🔴 Very Crowded", use_container_width=True): crowd_selection = "🔴 Very Crowded"
 
-# Push using backend function endpoint
+# Direct HTTP POST Request to the raw table 
 if crowd_selection:
     if not uploaded_file:
         st.warning("⚠️ Please snap a quick photo proof before updating status to ensure data accuracy!")
@@ -63,22 +64,20 @@ if crowd_selection:
             base64_photo = base64.b64encode(bytes_data).decode('utf-8')
             
             payload = {
-                "p_transit_type": category,
-                "p_station_name": selected_station,
-                "p_crowd_level": crowd_selection,
-                "p_proof_photo": base64_photo
+                "transit_type": category,
+                "station_name": selected_station,
+                "crowd_level": crowd_selection,
+                "proof_photo": base64_photo
             }
             
-            # FIXED: Forced clear explicit forward slash separation
-            post_url = f"{BASE_URL}/accept_commuter_report"
-            response = requests.post(post_url, headers=HEADERS, json=payload)
+            response = requests.post(URL, headers=HEADERS, json=payload)
             
-            if response.status_code == 200 or response.status_code == 201:
+            if response.status_code == 201 or response.status_code == 200:
                 st.success("✅ Proof verified! Status updated.")
                 time.sleep(0.5)
                 st.rerun()
             else:
-                st.error(f"Sync Issue. Server Code: {response.status_code}")
+                st.error(f"Sync Issue. Server Response Code: {response.status_code}")
         except Exception as e:
             st.error(f"Sync error detail: {e}")
 
@@ -86,11 +85,10 @@ if crowd_selection:
 st.markdown("---")
 st.write(f"### 📊 Real-Time Status: {selected_station}")
 
+# Passing filters directly into the URL query params to filter logs instantly
+get_url = f"{URL}?station_name=eq.{selected_station}&order=reported_at.desc&limit=1"
 try:
-    fetch_payload = {"p_station_name": selected_station}
-    # FIXED: Forced clear explicit forward slash separation
-    get_url = f"{BASE_URL}/fetch_latest_report"
-    response = requests.post(get_url, headers=HEADERS, json=fetch_payload)
+    response = requests.get(get_url, headers=HEADERS)
     
     if response.status_code == 200:
         station_logs = response.json()
@@ -98,7 +96,7 @@ try:
         if not station_logs or len(station_logs) == 0:
             st.info(f"No recent logs for {selected_station} station yet. Be the first to add verified data!")
         else:
-            latest_report = station_logs[0]  # Array dictionary safe indexing
+            latest_report = station_logs[0] # Safely pick first index from returned log array
             latest_crowd = latest_report.get('crowd_level', 'Unknown')
             photo_data_string = latest_report.get('proof_photo', None)
             
@@ -123,7 +121,7 @@ try:
                 except:
                     st.caption("Unable to load preview attachment.")
     else:
-        st.error(f"Failed to fetch timeline status logs. Server response: {response.status_code}")
+        st.error(f"Failed to fetch logs. Error Code: {response.status_code}")
 except Exception as e:
     st.error(f"System pathway processing issue: {e}")
 
