@@ -2,9 +2,16 @@ import streamlit as st
 from datetime import datetime
 import base64
 import time
+from supabase import create_client
 
-if "cloud_transit_db" not in st.session_state:
-    st.session_state.cloud_transit_db = {}
+SUPABASE_URL = "https://loblkqxsxlcmmamwjibp.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvYmxrcXhzeGxjbW1hbXdqaWJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTE4NDQsImV4cCI6MjA5OTc4Nzg0NH0.Vi7nYkCBUCnZvpNviQ8Ps__RHp5_BlIMx6lCWVmx-QE"
+
+@st.cache_resource
+def get_supabase():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+supabase = get_supabase()
 
 STATION_DATABASE = {
     "Mumbai Local": {
@@ -23,14 +30,14 @@ STATION_DATABASE = {
         ],
         "Harbour Line": [
             "CSMT", "Masjid", "Sandhurst Road", "Dockyard Road", "Reay Road", "Cotton Green",
-            "Sewri", "Wadala Road", "King's Circle", "Mahim", "Bandra", "Khar Road", 
-            "Santacruz", "Vile Parle", "Andheri", "Goregaon", "Guru Tegh Bahadur Nagar", 
-            "Chunabhatti", "Kurla", "Tilaknagar", "Chembur", "Govandi", "Mankhurd", 
-            "Vashi", "Sanpada", "Juinagar", "Nerul", "Seawoods-Darave", "Belapur", 
+            "Sewri", "Wadala Road", "King's Circle", "Mahim", "Bandra", "Khar Road",
+            "Santacruz", "Vile Parle", "Andheri", "Goregaon", "Guru Tegh Bahadur Nagar",
+            "Chunabhatti", "Kurla", "Tilaknagar", "Chembur", "Govandi", "Mankhurd",
+            "Vashi", "Sanpada", "Juinagar", "Nerul", "Seawoods-Darave", "Belapur",
             "Kharghar", "Mansarovar", "Khandeshwar", "Panvel"
         ],
         "Trans-Harbour Line": [
-            "Thane", "Airoli", "Rabale", "Ghansoli", "Koparkhairane", 
+            "Thane", "Airoli", "Rabale", "Ghansoli", "Koparkhairane",
             "Turbhe", "Sanpada", "Vashi", "Juinagar", "Nerul", "Belapur", "Panvel"
         ]
     },
@@ -40,11 +47,11 @@ STATION_DATABASE = {
             "Chakala (JB Nagar)", "Marol Naka", "Saki Naka", "Asalpha", "Jagruti Nagar", "Ghatkopar"
         ],
         "Metro Line 2A & 7 (Dahisar - Andheri)": [
-            "Andheri West", "Lower Oshiwara", "Oshiwara", "Goregaon West", "Bangur Nagar", 
-            "Malad West", "Valnai", "Dahanukarwadi", "Kandivali West", "Pahari Goregaon", 
-            "Borivali West", "Eksar", "Mandapeshwar", "Kandarpada", "Dahisar East", 
-            "Ovaripada", "National Park", "Devipada", "Magathane", "Poisar", 
-            "Akurli", "Kurar", "Dindoshi", "Aarey", "Goregaon East", 
+            "Andheri West", "Lower Oshiwara", "Oshiwara", "Goregaon West", "Bangur Nagar",
+            "Malad West", "Valnai", "Dahanukarwadi", "Kandivali West", "Pahari Goregaon",
+            "Borivali West", "Eksar", "Mandapeshwar", "Kandarpada", "Dahisar East",
+            "Ovaripada", "National Park", "Devipada", "Magathane", "Poisar",
+            "Akurli", "Kurar", "Dindoshi", "Aarey", "Goregaon East",
             "Jogeshwari East", "Shankarwadi", "Gundavali"
         ],
         "Metro Line 3 (Aqua Line)": [
@@ -94,12 +101,12 @@ if crowd_selection:
         try:
             bytes_data = uploaded_file.getvalue()
             base64_photo = base64.b64encode(bytes_data).decode('utf-8')
-            storage_key = f"{selected_line} - {selected_station}"
-            st.session_state.cloud_transit_db[storage_key] = {
-                "crowd_level": crowd_selection,
-                "proof_photo": base64_photo,
-                "reported_at": datetime.now().isoformat()
-            }
+            supabase.rpc("accept_commuter_report", {
+                "p_transit_type": network,
+                "p_station_name": selected_station,
+                "p_crowd_level": crowd_selection,
+                "p_proof_photo": base64_photo
+            }).execute()
             st.success(f"✅ Status broadcasted for {selected_station}!")
             time.sleep(0.5)
             st.rerun()
@@ -109,8 +116,12 @@ if crowd_selection:
 st.markdown("---")
 st.write(f"### 📊 Real-Time Status: {selected_station} ({selected_line})")
 
-storage_key = f"{selected_line} - {selected_station}"
-latest_report = st.session_state.cloud_transit_db.get(storage_key, None)
+try:
+    result = supabase.rpc("fetch_latest_report", {"p_station_name": selected_station}).execute()
+    latest_report = result.data[0] if result.data else None
+except Exception as e:
+    latest_report = None
+    st.warning(f"Could not fetch report: {e}")
 
 if not latest_report:
     st.info(f"No recent logs for {selected_station} yet. Be the first to update commuters by snapping a photo above!")
@@ -134,7 +145,7 @@ else:
 st.markdown('<div class="ad-box">🏷️ <b>Sponsored Links By Google</b><br><small>AdSense Native Content Unit</small></div>', unsafe_allow_html=True)
 
 share_msg = f"Check if {selected_station} ({selected_line}) is crowded right now before leaving home: "
-whatsapp_link = f"https://whatsapp.com{share_msg}https://streamlit.app"
+whatsapp_link = f"https://whatsapp.com{share_msg}https://mumbaikarlive.in"
 st.markdown(f'<a href="{whatsapp_link}" target="_blank"><button style="width:100%; padding:11px; background-color:#25D366; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-bottom:15px;">🟢 Share {selected_station} Live Status via WhatsApp</button></a>', unsafe_allow_html=True)
 
 st.markdown("---")
