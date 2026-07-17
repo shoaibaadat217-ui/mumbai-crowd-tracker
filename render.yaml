@@ -2,8 +2,7 @@ services:
   - type: web
     name: mumbaikarlive
     runtime: python
-    buildCommand: pip install streamlit
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+   startCommand: streamlit run mumbai_transit.py --server.port $PORT --server.address 0.0.0.0
     envVars:
       - key: PORT
         value: 10000
